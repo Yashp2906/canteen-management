@@ -42,8 +42,8 @@ const [department, setDepartment] = useState('');
 
 
   useEffect(() => {
-    const storedCart = localStorage.getItem('canteen_cart');
-    const storedSession = localStorage.getItem('canteen_session_id');
+    const storedCart = sessionStorage.getItem('canteen_cart');
+const storedSession = sessionStorage.getItem('canteen_session_id');
 
     if (storedCart) {
       const parsedCart = JSON.parse(storedCart);
@@ -97,7 +97,7 @@ const placeOrder = async () => {
       alert('Order failed: ' + error.message);
       setLoading(false);
     } else {
-      localStorage.removeItem('canteen_cart');
+      sessionStorage.removeItem('canteen_cart');
       setCart([]);
       setIsSuccess(true); // Switch to success UI
       setLoading(false);
