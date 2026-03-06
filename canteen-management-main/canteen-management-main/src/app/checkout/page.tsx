@@ -40,7 +40,7 @@ export default function CheckoutPage() {
 const [department, setDepartment] = useState('');
 
 
-``
+
   useEffect(() => {
     const storedCart = sessionStorage.getItem('canteen_cart');
 const storedSession = sessionStorage.getItem('canteen_session_id');
