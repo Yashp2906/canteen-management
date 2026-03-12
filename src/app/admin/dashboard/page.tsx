@@ -1,101 +1,107 @@
-'use client';
+"use client";
 
-import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
-import { useEffect } from 'react';
-import { Bell } from 'lucide-react';
-import { useState } from 'react';
-import { useRef } from 'react';
-
+import { useRouter } from "next/navigation";
+import { useEffect, useState, useRef } from "react";
 
 import {
   ShoppingBag,
   UtensilsCrossed,
   BarChart3,
   ArrowRight,
-  Settings,
-  LogOut
-} from 'lucide-react';
+  LogOut,
+  Bell,
+} from "lucide-react";
 
 export default function AdminDashboard() {
   const router = useRouter();
 
-// 1. Create a ref to store the audio object
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-useEffect(() => {
-    // 2. Initialize the audio object on the client side
-    audioRef.current = new Audio('/notification.mp3');
-  }, []);
-
-
-  
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      const { data } = await supabase.auth.getUser();
-      if (!data.user) router.push('/admin/login');
-    };
-    checkAuth();
-  },
-
-    [router]);
-
-
-
-
-
-  useEffect(() => {
-    const channel = supabase
-      .channel('admin-order-notifications')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'orders' },
-        (payload) => {
-  const order = payload.new as any;
-
-  let message = "";
-
-  if (order.is_department_order) {
-    message = `🏫 SIR ORDER (${order.department}) ➜ ${order.food_name} × ${order.quantity}`;
-  } else {
-    message = `🛎️ New Order: ${order.food_name} × ${order.quantity} (Table ${order.table_no})`;
-  }
-
-  setNotifications((prev) => [
-    {
-      id: order.id,
-      message: message,
-    },
-    ...prev,
-  ]);
-
-          // 🔊 SOUND HERE
-if (audioRef.current) {
-            audioRef.current.play().catch(error => {
-              console.error("Autoplay blocked or audio error:", error);
-            });
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push('/admin/login');
-  };
   const [notifications, setNotifications] = useState<
     { id: string; message: string }[]
   >([]);
+
   const [showNotifications, setShowNotifications] = useState(false);
 
+  /* ================= AUDIO INIT ================= */
+
+  useEffect(() => {
+    audioRef.current = new Audio("/notification.mp3");
+  }, []);
+
+  /* ================= AUTH CHECK ================= */
+
+useEffect(() => {
+  const token = localStorage.getItem("admin-auth");
+
+  if (!token) {
+    router.push("/admin/login");
+  }
+}, [router]);
+
+  /* ================= ORDER NOTIFICATIONS ================= */
 
 
+
+useEffect(() => {
+  const interval = setInterval(async () => {
+    try {
+      const res = await fetch("/api/orders/latest");
+      if (!res.ok || res.status === 204) return;
+      
+      const order = await res.json();
+      if (!order || !order.id || !order.createdAt) return;
+
+      // 1. CALCULATE IF THE ORDER IS ACTUALLY NEW
+      const orderTime = new Date(order.createdAt).getTime();
+      const currentTime = new Date().getTime();
+      const secondsAgo = (currentTime - orderTime) / 1000;
+
+      // Only proceed if the order was placed in the last 60 seconds
+      // Change '60' to '10' if you want it even stricter
+      if (secondsAgo > 60) {
+        return; 
+      }
+
+      setNotifications((prev) => {
+        // 2. CHECK FOR DUPLICATES (Don't ring/show if we already added it)
+        const isDuplicate = prev.some((n) => n.id === order.id);
+        if (isDuplicate) return prev;
+
+        // 3. PLAY AUDIO (Now only runs for truly fresh, non-duplicate orders)
+        if (audioRef.current) {
+          audioRef.current.play().catch((err) => console.error("Audio error:", err));
+        }
+
+        const message = order.is_department_order 
+          ? `🏫 SIR ORDER (${order.department}) ➜ ${order.food_name} × ${order.quantity}`
+          : `🛎️ New Order: ${order.food_name} × ${order.quantity} (Table ${order.table_no})`;
+
+        return [{ id: order.id, message }, ...prev];
+      });
+
+    } catch (err) {
+      console.error("Polling error:", err);
+    }
+  }, 4000); 
+
+  return () => clearInterval(interval);
+}, []);
+
+  /* ================= LOGOUT ================= */
+
+/* ================= LOGOUT ================= */
+
+const handleLogout = async () => {
+  localStorage.removeItem("admin-auth");
+
+  await fetch("/api/admin/logout", {
+    method: "POST",
+    credentials: "include",
+  });
+
+  router.push("/admin/login");
+};
 
   return (
 

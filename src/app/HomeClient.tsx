@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+
 import { v4 as uuidv4 } from 'uuid';
 import { useRouter } from 'next/navigation';
 import Image from "next/image";
@@ -29,7 +29,7 @@ type HomeClientProps = {
 /* ================= TYPES ================= */
 
 type Food = {
-  id: string;
+  _id: string;
   name: string;
   price: number;
   image_url: string | null;
@@ -90,82 +90,80 @@ export default function HomeClient({ initialFoods }: HomeClientProps) {
 
   //   return () => { supabase.removeChannel(channel); };
   // }, []);
+/* ================= AUTO REFRESH FOODS ================= */
+
 useEffect(() => {
-  // load categories once (small data)
+  // Initial fetch
+  fetchFoods();
   fetchCategories();
 
-  // realtime updates (foods only)
-  const channel = supabase
-    .channel('foods-realtime')
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'foods' },
-      async () => {
-        const { data } = await supabase
-          .from('foods')
-          .select('id,name,price,image_url,status,category_id')
-          .order('created_at', { ascending: false });
+  // Set up interval to check for status updates (e.g., every 5 seconds)
+  const interval = setInterval(() => {
+    fetchFoods();
+    fetchCategories();
+  }, 5000); 
 
-        if (data) setFoods(data);
-      }
-    )
-    .subscribe();
-
-  return () => {
-    supabase.removeChannel(channel);
-  };
+  return () => clearInterval(interval);
 }, []);
 
-  const fetchFoods = async () => {
-    const { data } = await supabase
-      .from('foods')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (data) setFoods(data);
-  };
-  const fetchCategories = async () => {
-    const { data } = await supabase
-      .from('categories')
-      .select('*')
-      .order('name', { ascending: true });
-
-    if (data) setCategories(data);
-  };
+const fetchFoods = async () => {
+  const res = await fetch("/api/foods", { cache: "no-store" });
+  const data = await res.json();
+  setFoods(data);
+};
+const fetchCategories = async () => {
+  const res = await fetch("/api/categories", { cache: "no-store" });
+  const data = await res.json();
+  setCategories(data);
+};
 
   /* ================= MY ORDERS LOGIC ================= */
 
-  const fetchMyOrdersInternal = async () => {
-    const sId = sessionStorage.getItem('canteen_session_id');
-    const { data } = await supabase
-      .from('orders')
-      .select('*')
-      .eq('session_id', sId)
-      .order('created_at', { ascending: false });
+const fetchMyOrdersInternal = async () => {
+  const sId = sessionStorage.getItem("canteen_session_id");
 
-    if (data) setMyOrders(data);
-  };
+  const res = await fetch(`/api/orders?session_id=${sId}`);
+  const data = await res.json();
 
+  setMyOrders(data);
+};
+useEffect(() => {
+  if (!showOrdersModal) return;
+
+  const interval = setInterval(() => {
+    fetchMyOrdersInternal();
+  }, 3000); // refresh every 3 seconds
+
+  return () => clearInterval(interval);
+}, [showOrdersModal]);
   const openOrdersModal = () => {
     fetchMyOrdersInternal();
     setShowOrdersModal(true);
   };
 
-  const cancelOrder = async (orderId: string) => {
-    if (!confirm('Are you sure you want to cancel this order?')) return;
+const cancelOrder = async (orderId: string) => {
+  if (!confirm("Cancel this order?")) return;
 
-    const { error } = await supabase
-      .from('orders')
-      .delete()
-      .eq('id', orderId)
-      .eq('status', 'placed'); // Security check: Only delete if still 'placed'
+  try {
+    console.log("Deleting order id:", orderId);
 
-    if (error) {
-      alert("Could not cancel. It might be already in preparation.");
-    } else {
-      fetchMyOrdersInternal();
-    }
-  };
+ const res = await fetch(`/api/orders/${orderId}`, {
+  method: "DELETE",
+});
+    const data = await res.json();
+
+    console.log("Delete result:", data);
+
+    fetchMyOrdersInternal();
+
+  } catch (err) {
+    console.error("Delete failed:", err);
+  }
+};
+
+
+
+
 
   /* ================= GPS RADIUS CHECK LOGIC (AUTO TRIGGER) ================= */
 
@@ -179,7 +177,7 @@ useEffect(() => {
 
   const updateQty = (id: string, delta: number) => {
     setCart((prev) =>
-      prev.map((i) => i.food.id === id ? { ...i, quantity: i.quantity + delta } : i)
+      prev.map((i) => i.food._id === id ? { ...i, quantity: i.quantity + delta } : i)
         .filter((i) => i.quantity > 0)
     );
   };
@@ -196,14 +194,17 @@ useEffect(() => {
       .toLowerCase()
       .includes(searchQuery.toLowerCase());
 
-    const matchesCategory =
-      activeCategory === 'all' || food.category_id === activeCategory;
+const matchesCategory =
+    activeCategory === 'all' || 
+    (food.category_id && typeof food.category_id === 'object' 
+      ? (food.category_id as any)._id === activeCategory 
+      : food.category_id === activeCategory);
 
     return matchesSearch && matchesCategory;
   });
 
 
-  const getItemInCart = (foodId: string) => cart.find(item => item.food.id === foodId);
+  const getItemInCart = (foodId: string) => cart.find(item => item.food._id === foodId);
 
   return (
     <div className="min-h-screen bg-[#030712] text-slate-200 font-sans pb-32">
@@ -276,10 +277,10 @@ useEffect(() => {
 
             {/* CATEGORY BUTTONS */}
             {categories?.map((cat) => (
-              <button
-                key={cat.id}
-                onClick={() => setActiveCategory(cat.id)}
-                className={`px-5 py-2.5 rounded-full text-sm font-bold uppercase tracking-widest transition-all border whitespace-nowrap ${activeCategory === cat.id
+  <button
+    key={cat._id}
+    onClick={() => setActiveCategory(cat._id)}
+                className={`px-5 py-2.5 rounded-full text-sm font-bold uppercase tracking-widest transition-all border whitespace-nowrap ${activeCategory === cat._id
                     ? 'bg-orange-500 text-white border-orange-500 shadow-lg'
                     : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
                   }`}
@@ -304,11 +305,11 @@ useEffect(() => {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
           {filteredFoods.map((food) => {
-            const cartItem = getItemInCart(food.id);
+            const cartItem = getItemInCart(food._id);
 
             return (
               <div
-                key={food.id}
+                key={food._id}
                 className={`group relative rounded-[2.5rem] bg-[#0F172A]/40 border border-white/5 overflow-hidden transition-all duration-500 hover:bg-[#0F172A]/80 hover:border-orange-500/30 ${food.status === 'unavailable' ? 'grayscale opacity-60' : ''
                   }`}
               >
@@ -343,11 +344,11 @@ useEffect(() => {
                       </div>
                     ) : cartItem ? (
                       <div className="flex items-center gap-3 bg-white text-slate-900 p-1.5 rounded-2xl shadow-2xl animate-in zoom-in-90 duration-300">
-                        <button onClick={() => updateQty(food.id, -1)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors">
+                        <button onClick={() => updateQty(food._id, -1)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors">
                           <Minus className="w-4 h-4" />
                         </button>
                         <span className="font-black w-4 text-center text-lg">{cartItem.quantity}</span>
-                        <button onClick={() => updateQty(food.id, 1)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors">
+                        <button onClick={() => updateQty(food._id, 1)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors">
                           <Plus className="w-4 h-4" />
                         </button>
                       </div>
@@ -401,7 +402,7 @@ useEffect(() => {
                 </div>
               ) : (
                 myOrders.map((order) => (
-                  <div key={order.id} className="bg-white/5 border border-white/5 p-5 rounded-[1.5rem] flex justify-between items-center group relative overflow-hidden">
+                  <div key={order._id} className="bg-white/5 border border-white/5 p-5 rounded-[1.5rem] flex justify-between items-center group relative overflow-hidden">
                     <div className="flex items-center gap-4 z-10">
                       <div className="w-10 h-10 bg-orange-500/10 rounded-xl flex items-center justify-center font-bold text-orange-500">
                         {order.quantity}x
@@ -423,7 +424,7 @@ useEffect(() => {
                       {/* CANCEL BUTTON: Only visible if status is 'placed' */}
                       {order.status === 'placed' && (
                         <button
-                          onClick={() => cancelOrder(order.id)}
+                          onClick={() => cancelOrder(order._id)}
                           className="flex items-center gap-1 text-[9px] font-bold text-rose-500 hover:text-rose-400 transition-colors uppercase tracking-tighter"
                         >
                           <Trash2 className="w-3 h-3" /> Cancel Order

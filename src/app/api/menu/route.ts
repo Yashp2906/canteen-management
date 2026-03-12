@@ -1,22 +1,20 @@
-import { createClient } from "@supabase/supabase-js";
+import { NextResponse } from "next/server";
+import { connectDB } from "@/lib/mongodb";
+import Food from "@/models/Food";
 
-export const runtime = "edge";
+export const runtime = "nodejs";
 
 export async function GET() {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
 
-  const { data } = await supabase
-    .from("foods")
-    .select("id,name,price,image_url,status,category_id")
-    .order("created_at", { ascending: false });
+  await connectDB();
 
-  return new Response(JSON.stringify(data), {
+  const foods = await Food.find({})
+    .sort({ created_at: -1 })
+    .lean();
+
+  return NextResponse.json(foods, {
     headers: {
-      "Content-Type": "application/json",
-      "Cache-Control": "public, s-maxage=60, stale-while-revalidate=600",
-    },
+      "Cache-Control": "public, s-maxage=60, stale-while-revalidate=600"
+    }
   });
 }

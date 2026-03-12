@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import { uploadToCloudinary } from "@/lib/cloudinaryUpload";
 import {
@@ -15,153 +14,174 @@ import {
   Image as ImageIcon,
   Loader2,
 } from "lucide-react";
+
 type Category = {
-  id: string;
+  _id: string;
   name: string;
 };
 
 type Food = {
-  id: string;
+  _id: string;
   name: string;
   price: number;
   status: string;
   image_url: string | null;
-  category_id: string | null;
-  categories?: {
-    id: string;
-    name: string;
-  };
+  category_id:
+    | {
+        _id: string;
+        name: string;
+      }
+    | null;
 };
 
 export default function FoodManagementPage() {
   const router = useRouter();
+
   const [foods, setFoods] = useState<Food[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]); // ✅ HERE
-  const [categoryId, setCategoryId] = useState(""); // ✅ HERE
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoryId, setCategoryId] = useState("");
+
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
+
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+
   const [newCategory, setNewCategory] = useState("");
 
-  useEffect(() => {
-    const init = async () => {
-      const { data } = await supabase.auth.getUser();
-      if (!data.user) router.push("/admin/login");
-      await fetchCategories();
-      fetchFoods();
-    };
-    init();
-  }, [router]);
+useEffect(() => {
+  Promise.all([fetchCategories(), fetchFoods()]);
+}, []);
+
+  /* ================= FETCH FOODS ================= */
+
+  const fetchFoods = async () => {
+    const res = await fetch("/api/foods");
+    const data = await res.json();
+    setFoods(data);
+  };
+
+  /* ================= FETCH CATEGORIES ================= */
+
+  const fetchCategories = async () => {
+    const res = await fetch("/api/categories");
+    const data = await res.json();
+    setCategories(data);
+  };
+
+  /* ================= ADD CATEGORY ================= */
+
   const addCategory = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!newCategory.trim()) return;
 
-    const { error } = await supabase.from("categories").insert({
-      name: newCategory,
+    await fetch("/api/categories", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name: newCategory }),
     });
 
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
     setNewCategory("");
-    fetchCategories(); // refresh dropdown
-  };
-  const deleteCategory = async (id: string) => {
-    console.log("Deleting ID:", id); // 👈 ADD THIS
-
-    const { data, error } = await supabase
-      .from("categories")
-      .delete()
-      .eq("id", id)
-      .select();
-
-    console.log("DELETE RESULT:", data, error);
-
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
     fetchCategories();
-    fetchFoods();
   };
 
-  const fetchCategories = async () => {
-    const { data } = await supabase
-      .from("categories")
-      .select("*")
-      .order("name", { ascending: true });
+  /* ================= DELETE CATEGORY ================= */
 
-    if (data) setCategories(data);
-  };
+const deleteCategory = async (id: string) => {
+  console.log("Deleting category:", id);
 
-  const fetchFoods = async () => {
-    const { data } = await supabase
-      .from("foods")
-      .select(
-        `
-      *,
-      categories (
-        id,
-        name
-      )
-    `,
-      )
-      .order("created_at", { ascending: false });
-
-    if (data) setFoods(data);
-  };
-
-const addFood = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!name || !price) return;
-  setIsUploading(true);
-
-  let imageUrl: string | null = null;
-  let publicId: string | null = null;
-
-  if (imageFile) {
-    const upload = await uploadToCloudinary(imageFile);
-
-    imageUrl = upload.url;
-    publicId = upload.public_id;
+  if (!id) {
+    alert("Category ID missing");
+    return;
   }
 
-  await supabase.from("foods").insert({
-    name,
-    price: Number(price),
-    image_url: imageUrl,
-    image_public_id: publicId,
-    status: "available",
-    category_id: categoryId,
+  const res = await fetch(`/api/categories/${id}`, {
+    method: "DELETE",
   });
 
-  setName("");
-  setPrice("");
-  setImageFile(null);
-  setIsUploading(false);
+  const data = await res.json();
+
+  if (!res.ok) {
+    console.error("Delete category failed:", data);
+    alert(data.error || "Delete failed");
+    return;
+  }
+
+  fetchCategories();
   fetchFoods();
-  setCategoryId("");
 };
 
-  const toggleStatus = async (food: Food) => {
-    await supabase
-      .from("foods")
-      .update({
-        status: food.status === "available" ? "unavailable" : "available",
-      })
-      .eq("id", food.id);
+  /* ================= ADD FOOD ================= */
+
+  const addFood = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!name || !price) return;
+
+    setIsUploading(true);
+
+    let imageUrl: string | null = null;
+    let publicId: string | null = null;
+
+    if (imageFile) {
+      const upload = await uploadToCloudinary(imageFile);
+      imageUrl = upload.url;
+      publicId = upload.public_id;
+    }
+
+    await fetch("/api/foods", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name,
+        price: Number(price),
+        image_url: imageUrl,
+        image_public_id: publicId,
+        status: "available",
+        category_id: categoryId,
+      }),
+    });
+
+    setName("");
+    setPrice("");
+    setImageFile(null);
+    setCategoryId("");
+
+    setIsUploading(false);
 
     fetchFoods();
   };
+
+  /* ================= TOGGLE STATUS ================= */
+
+  const toggleStatus = async (food: Food) => {
+    await fetch(`/api/foods/${food._id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        status: food.status === "available" ? "unavailable" : "available",
+      }),
+    });
+
+    fetchFoods();
+  };
+
+  /* ================= DELETE FOOD ================= */
 
   const deleteFood = async (id: string) => {
     if (!confirm("Are you sure you want to delete this item?")) return;
-    await supabase.from("foods").delete().eq("id", id);
+
+    await fetch(`/api/foods/${id}`, {
+      method: "DELETE",
+    });
+
     fetchFoods();
   };
 
@@ -220,12 +240,12 @@ const addFood = async (e: React.FormEvent) => {
       <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
         {categories.map((cat) => (
           <div
-            key={cat.id}
+            key={cat._id}
             className="flex justify-between items-center px-3 py-2 rounded-lg bg-white/3 hover:bg-white/5 transition text-sm"
           >
             <span className="text-slate-300">{cat.name}</span>
             <button
-              onClick={() => deleteCategory(cat.id)}
+              onClick={() => deleteCategory(cat._id)}
               className="text-rose-500 hover:text-rose-400 text-xs"
             >
               Delete
@@ -287,9 +307,7 @@ const addFood = async (e: React.FormEvent) => {
     Select Category
   </option>
   {categories.map((cat) => (
-    <option 
-      key={cat.id} 
-      value={cat.id} 
+    <option key={cat._id} value={cat._id}
       className="bg-[#0F172A] text-white"
     >
       {cat.name}
@@ -347,7 +365,7 @@ const addFood = async (e: React.FormEvent) => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {foods.map((food) => (
                 <div
-                  key={food.id}
+                  key={food._id}
                   className="group relative bg-[#0F172A]/60 border border-white/5 rounded-[2rem] overflow-hidden hover:border-orange-500/30 transition-all duration-500"
                 >
                   {/* Image Container */}
@@ -383,7 +401,7 @@ const addFood = async (e: React.FormEvent) => {
                       </h3>
 
                       <p className="text-xs text-orange-400 mt-1">
-                        {food.categories?.name}
+                        {food.category_id?.name}
                       </p>
 
                       <p className="text-lg font-black text-white italic mt-2">
@@ -410,7 +428,7 @@ const addFood = async (e: React.FormEvent) => {
                       </button>
 
                       <button
-                        onClick={() => deleteFood(food.id)}
+                        onClick={() => deleteFood(food._id)}
                         className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all"
                       >
                         <Trash2 className="w-5 h-5" />

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+
 import { useRouter } from 'next/navigation';
 import { Lock, Mail, Loader2, ShieldCheck, ArrowRight } from 'lucide-react';
 
@@ -11,52 +11,45 @@ export default function AdminLogin() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
 const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
+  e.preventDefault();
 
-    try {
-      // 🔐 STEP 1: Supabase Auth se login karein
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+  setLoading(true);
+  setError(null);
 
-      if (authError) {
-        setError(authError.message);
-        setLoading(false);
-        return;
-      }
+  try {
+   const res = await fetch("/api/admin/login", {
+  method: "POST",
+  credentials: "include",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    email,
+    password,
+  }),
+});
 
-      if (authData.user) {
-        // 🛡️ STEP 2: Database Table ('admins') mein user ko dhoondein
-        // Agar aapne DB se delete kar diya hai, toh ye query empty result degi
-        const { data: adminRecord, error: dbError } = await supabase
-          .from('admins')
-          .select('*')
-          .eq('id', authData.user.id)
-          .single();
+    const data = await res.json();
 
-        if (dbError || !adminRecord) {
-          // 🚫 Agar Auth successful hai par DB mein record nahi hai
-          // Toh user ko logout karwa dein aur error dikhayein
-          await supabase.auth.signOut();
-          setError("Access Denied: Is account ka admin record delete ho chuka hai.");
-          setLoading(false);
-          return;
-        }
+   if (!res.ok) {
+  setError(data.message || "Invalid credentials");
+  setLoading(false);
+  return;
+}
 
-        // ✅ STEP 3: Sab sahi hai, redirect to dashboard
-        router.push('/admin/dashboard');
-      }
-    } catch (err) {
-      setError("An unexpected error occurred during verification.");
-    } finally {
-      setLoading(false);
-    }
-  };
+// store login state
+localStorage.setItem("admin-auth", "true");
+
+router.push("/admin/dashboard");
+
+    
+  } catch (err) {
+    setError("Login failed. Please try again.");
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="relative min-h-screen bg-[#030712] overflow-hidden flex items-center justify-center px-6">
@@ -68,7 +61,7 @@ const handleLogin = async (e: React.FormEvent) => {
       <div className="relative z-10 w-full max-w-md group">
         {/* Animated Border Glow */}
         <div className="absolute -inset-1 bg-gradient-to-r from-emerald-500/50 to-cyan-500/50 rounded-[2.5rem] blur opacity-25 group-hover:opacity-50 transition duration-1000"></div>
-        
+
         <form
           onSubmit={handleLogin}
           className="relative rounded-[2.5rem] bg-[#0F172A]/80 border border-white/10 p-10 backdrop-blur-3xl shadow-2xl"

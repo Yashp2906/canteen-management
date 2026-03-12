@@ -1,95 +1,100 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
-import { useRouter } from 'next/navigation';
-import { 
-  Clock, 
-  User, 
-  Phone, 
-  ChevronRight, 
-  LayoutGrid, 
-  Coffee, 
-  CheckCircle2, 
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  Clock,
+  User,
+  Phone,
+  ChevronRight,
+  LayoutGrid,
+  Coffee,
+  CheckCircle2,
   Timer,
   RefreshCw
-} from 'lucide-react';
+} from "lucide-react";
 
 /* ================= TYPES ================= */
 
 type Order = {
-  id: string;
+  _id: string;
   food_name: string;
   quantity: number;
   status: string;
   table_no: number;
   user_name: string;
   user_phone: string;
-  is_department_order: boolean
+  is_department_order: boolean;
   department: string | null;
 };
 
-
-/* ================= COMPONENT ================= */
-
 export default function OrdersPage() {
   const router = useRouter();
+
   const [orders, setOrders] = useState<Order[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   /* ================= AUTH + FETCH ================= */
 
+useEffect(() => {
+  const token = localStorage.getItem("admin-auth");
+
+  if (!token) {
+    router.push("/admin/login");
+    return;
+  }
+
+  fetchOrders();
+}, [router]);
+
+  /* ================= AUTO REFRESH ================= */
+
   useEffect(() => {
-    const init = async () => {
-      const { data } = await supabase.auth.getUser();
-      if (!data.user) {
-        router.push('/admin/login');
-        return;
-      }
+    const interval = setInterval(() => {
       fetchOrders();
-    };
-    init();
-  }, [router]);
+    }, 4000); // refresh every 4s
 
-  /* ================= REALTIME ================= */
-
-  useEffect(() => {
-    const channel = supabase
-      .channel('admin-orders-realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'orders' },
-        () => fetchOrders()
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => clearInterval(interval);
   }, []);
 
+  /* ================= FETCH ORDERS ================= */
+
   const fetchOrders = async () => {
+
     setIsRefreshing(true);
-    const { data } = await supabase
-      .from('orders')
-      .select('*')
-      .neq('status', 'delivered')
-      .order('created_at', { ascending: false });
+
+    const res = await fetch("/api/orders");
+
+    const data = await res.json();
 
     if (data) setOrders(data);
+
     setTimeout(() => setIsRefreshing(false), 600);
   };
 
+  /* ================= UPDATE STATUS ================= */
+
   const updateOrderStatus = async (orderId: string, status: string) => {
-    await supabase.from('orders').update({ status }).eq('id', orderId);
+
+    await fetch(`/api/orders/${orderId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ status })
+    });
+
     fetchOrders();
   };
 
-  const groupedOrders = orders.reduce((acc, order) => {
-    if (!acc[order.table_no]) acc[order.table_no] = [];
-    acc[order.table_no].push(order);
-    return acc;
-  }, {} as Record<number, Order[]>);
+// Filter out delivered orders so they don't show on the kitchen feed
+const activeOrders = orders.filter(order => order.status !== "delivered");
+
+const groupedOrders = activeOrders.reduce((acc, order) => {
+  if (!acc[order.table_no]) acc[order.table_no] = [];
+  acc[order.table_no].push(order);
+  return acc;
+}, {} as Record<number, Order[]>);
 
   return (
     <div className="min-h-screen bg-[#030712] text-slate-200 font-sans selection:bg-indigo-500/30">
@@ -157,7 +162,7 @@ export default function OrdersPage() {
                 <div className="p-8 space-y-4">
                   {tableOrders.map((order) => (
                     <div
-                      key={order.id}
+                      key={order._id}
                       className="group/item flex flex-col lg:flex-row lg:items-center justify-between gap-6 p-6 rounded-[1.5rem] bg-white/5 border border-white/5 hover:bg-white/[0.08] transition-all"
                     >
                       <div className="flex items-start gap-4">
@@ -203,7 +208,7 @@ export default function OrdersPage() {
                         <div className="relative group/select">
                           <select
                             value={order.status}
-                            onChange={(e) => updateOrderStatus(order.id, e.target.value)}
+                            onChange={(e) => updateOrderStatus(order._id, e.target.value)}
                             className="appearance-none rounded-xl bg-slate-900 border border-white/10 text-white pl-4 pr-10 py-2.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer hover:border-white/20 transition-all"
                           >
                             <option value="placed">Placed</option>

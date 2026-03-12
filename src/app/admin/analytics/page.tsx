@@ -1,112 +1,77 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
-import { useRouter } from 'next/navigation';
-import { TrendingUp, Package, IndianRupee, Trash2, ArrowUpRight, BarChart3 } from 'lucide-react';
-
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  TrendingUp,
+  Package,
+  IndianRupee,
+  Trash2,
+  ArrowUpRight,
+  BarChart3,
+} from "lucide-react";
 
 export default function AnalyticsPage() {
   const router = useRouter();
+
   const [totalItemsSold, setTotalItemsSold] = useState(0);
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [itemWiseSales, setItemWiseSales] = useState<
-  { food_name: string; quantity: number; revenue: number }[]
->([]);
 
-  // FIX: Added state for time to prevent hydration error
-  const [currentTime, setCurrentTime] = useState<string>('');
+  const [itemWiseSales, setItemWiseSales] = useState<
+    { food_name: string; quantity: number; revenue: number }[]
+  >([]);
+
+  const [currentTime, setCurrentTime] = useState("");
 
   useEffect(() => {
     const init = async () => {
-      const { data } = await supabase.auth.getUser();
-      if (!data.user) router.push('/admin/login');
       await fetchTodaySales();
       await fetchItemWiseSales();
-
       setLoading(false);
     };
+
     init();
 
-    // FIX: Set time only on client side
-    setCurrentTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-  }, [router]);
+    setCurrentTime(
+      new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    );
+  }, []);
+
+  /* ================= FETCH TODAY SALES ================= */
 
   const fetchTodaySales = async () => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const res = await fetch("/api/orders/analytics");
+    const data = await res.json();
 
-    const { data } = await supabase
-      .from('orders')
-      .select('price, quantity')
-      .eq('status', 'delivered')
-      .gte('created_at', today.toISOString());
-
-    let items = 0;
-    let revenue = 0;
-
-    data?.forEach((o) => {
-      items += o.quantity;
-      revenue += o.price * o.quantity;
-    });
-
-    setTotalItemsSold(items);
-    setTotalRevenue(revenue);
+    setTotalItemsSold(data.totalItemsSold);
+    setTotalRevenue(data.totalRevenue);
   };
 
+  /* ================= ITEM WISE SALES ================= */
+
   const fetchItemWiseSales = async () => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+    const res = await fetch("/api/orders/item-sales");
+    const data = await res.json();
 
-  const { data, error } = await supabase
-    .from('orders')
-    .select('food_name, quantity, price')
-    .eq('status', 'delivered')
-    .gte('created_at', today.toISOString());
+    setItemWiseSales(data);
+  };
 
-  if (error) {
-    console.error(error);
-    return;
-  }
-
-  const map: Record<
-    string,
-    { food_name: string; quantity: number; revenue: number }
-  > = {};
-
-  data?.forEach((o) => {
-    if (!map[o.food_name]) {
-      map[o.food_name] = {
-        food_name: o.food_name,
-        quantity: 0,
-        revenue: 0,
-      };
-    }
-
-    map[o.food_name].quantity += o.quantity;
-    map[o.food_name].revenue += o.price * o.quantity;
-  });
-
-  setItemWiseSales(Object.values(map));
-};
-
+  /* ================= CLEAR TODAY DATA ================= */
 
   const clearTodayDeliveredOrders = async () => {
-    if (!confirm('Clear today’s delivered orders? This action cannot be undone.')) return;
+    if (!confirm("Clear today’s delivered orders? This action cannot be undone."))
+      return;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    await supabase
-      .from('orders')
-      .delete()
-      .eq('status', 'delivered')
-      .gte('created_at', today.toISOString());
+    await fetch("/api/orders/clear-today", {
+      method: "DELETE",
+    });
 
     fetchTodaySales();
     setItemWiseSales([]);
-
   };
 
   return (

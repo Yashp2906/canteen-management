@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react'; // Added useEffect
-import { supabase } from '@/lib/supabaseClient';
+// import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 import {
   UserPlus,
@@ -24,78 +24,57 @@ export default function AdminRegister() {
   const [error, setError] = useState<string | null>(null);
 
   // 🛡️ CHECK ON PAGE LOAD: See if admin is already registered
-  useEffect(() => {
-    const checkAdminStatus = async () => {
-      try {
-        const { data, error } = await supabase.from('admins').select('id').limit(1);
-        if (data && data.length > 0) {
-          setIsAdminExists(true);
-        }
-      } catch (err) {
-        console.error('Error checking admin status:', err);
-      } finally {
-        setChecking(false);
-      }
-    };
-    checkAdminStatus();
-  }, []);
-
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    setLoading(true);
-    setError(null);
-
+useEffect(() => {
+  const checkAdminStatus = async () => {
     try {
-      // 🔒 STEP 1: Double-check logic (Security)
-      const { data: existingAdmins } = await supabase.from('admins').select('id').limit(1);
-      if (existingAdmins && existingAdmins.length > 0) {
-        setError('Security Alert: Registration is permanently locked.');
+      const res = await fetch("/api/admin/check-exists");
+      const data = await res.json();
+
+      if (data.exists) {
         setIsAdminExists(true);
-        setLoading(false);
-        return;
       }
-
-      // 🔐 STEP 2: Create Supabase Auth User
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-      });
-
-      if (signUpError) {
-        setError(signUpError.message);
-        setLoading(false);
-        return;
-      }
-
-      if (!data.user) {
-        setError('Failed to create admin user.');
-        setLoading(false);
-        return;
-      }
-
-      // 🧾 STEP 3: Insert into admins table
-      const { error: insertError } = await supabase.from('admins').insert([
-        {
-          id: data.user.id,
-          email: email,
-        },
-      ]);
-
-      if (insertError) {
-        setError('Database error. Admin record could not be created.');
-        setLoading(false);
-        return;
-      }
-
-      alert('Admin registered successfully!');
-      router.push('/admin/login');
     } catch (err) {
-      setError('Unexpected error occurred.');
+      console.error("Error checking admin status:", err);
     } finally {
-      setLoading(false);
+      setChecking(false);
     }
   };
+
+  checkAdminStatus();
+}, []);
+
+const handleRegister = async (e: React.FormEvent) => {
+  e.preventDefault();
+
+  setLoading(true);
+  setError(null);
+
+  try {
+    const res = await fetch("/api/admin/register", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email, password }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      setError(data.message || "Registration failed");
+      setLoading(false);
+      return;
+    }
+
+    alert("Admin registered successfully!");
+    router.push("/admin/login");
+
+  } catch (err) {
+    setError("Unexpected error occurred.");
+  } finally {
+    setLoading(false);
+  }
+};
 
   // 🚦 SCREEN: Loading state while checking DB
   if (checking) {
