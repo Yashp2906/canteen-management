@@ -92,16 +92,32 @@ export default function HomeClient({ initialFoods }: HomeClientProps) {
   // }, []);
 /* ================= AUTO REFRESH FOODS ================= */
 
-useEffect(() => {
-  // Initial fetch
-  fetchFoods();
-  fetchCategories();
+/* ================= AUTO REFRESH FOODS (FIXED) ================= */
 
-  // Set up interval to check for status updates (e.g., every 5 seconds)
-  const interval = setInterval(() => {
-    fetchFoods();
-    fetchCategories();
-  }, 5000); 
+useEffect(() => {
+  const loadData = async () => {
+    try {
+      await Promise.all([fetchFoods(), fetchCategories()]);
+    } catch (err) {
+      console.error("Initial load failed:", err);
+    }
+  };
+
+  loadData();
+
+  const interval = setInterval(async () => {
+    try {
+      // Use a silent fetch that doesn't crash the UI on failure
+      const res = await fetch("/api/foods");
+      if (res.ok) {
+        const data = await res.json();
+        setFoods(data);
+      }
+    } catch (err) {
+      // Just log the error in the console instead of showing a red screen
+      console.warn("Background sync failed. Will retry in 5s...");
+    }
+  }, 5000);
 
   return () => clearInterval(interval);
 }, []);
